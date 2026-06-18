@@ -1,0 +1,102 @@
+-- ===========================
+-- USERS
+-- ===========================
+CREATE TABLE users (
+    id            BIGSERIAL PRIMARY KEY,
+    username      TEXT NOT NULL UNIQUE,
+    display_name  TEXT,
+    password_hash TEXT NOT NULL,
+    email         TEXT NOT NULL UNIQUE,
+    avatar_url    TEXT,
+    created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+    bio           TEXT
+);
+
+-- ===========================
+-- SERVERS (Guilds)
+-- ===========================
+CREATE TABLE servers (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    owner_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    icon_url    TEXT,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ===========================
+-- SERVER MEMBERSHIP
+-- ===========================
+CREATE TABLE server_members (
+    server_id  BIGINT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    nickname   TEXT,
+    joined_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (server_id, user_id)
+);
+
+-- ===========================
+-- CHANNELS
+-- Types: 'text', 'voice', 'dm'
+-- ===========================
+CREATE TABLE channels (
+    id          BIGSERIAL PRIMARY KEY,
+    server_id   BIGINT REFERENCES servers(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    type        TEXT NOT NULL CHECK (type IN ('text', 'voice', 'dm')),
+    description TEXT,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- ===========================
+-- CHANNEL MEMBERS (For DM channels)
+-- Only used when type = 'dm'
+-- Allows multi-user DM groups
+-- ===========================
+CREATE TABLE channel_members (
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (channel_id, user_id)
+);
+
+-- ===========================
+-- MESSAGES
+-- ===========================
+CREATE TABLE messages (
+    id          BIGSERIAL PRIMARY KEY,
+    channel_id  BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    sender_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+    content     TEXT NOT NULL,
+    created_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+    edited_at   TIMESTAMP
+);
+
+-- ===========================
+-- OPTIONAL: ROLES
+-- ===========================
+CREATE TABLE roles (
+    id         BIGSERIAL PRIMARY KEY,
+    server_id  BIGINT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    color      TEXT,
+    position   INT NOT NULL DEFAULT 0
+);
+
+-- ===========================
+-- OPTIONAL: USER ROLES
+-- ===========================
+CREATE TABLE user_roles (
+    role_id   BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    user_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, user_id)
+);
+
+-- ===========================
+-- OPTIONAL: PERMISSIONS (Bitmask or JSON)
+-- ===========================
+CREATE TABLE channel_permissions (
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    role_id    BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    allow_mask BIGINT NOT NULL,
+    deny_mask  BIGINT NOT NULL,
+    PRIMARY KEY (channel_id, role_id)
+);

@@ -1,0 +1,12 @@
+-Wall
+-Wextra
+-Wno-variadic-macros
+-Wformat=2
+-std=c89
+-pedantic
+-fno-permissive
+-fPIC
+-Iinclude
+-D_SESHCORD_CLIENT
+-g
+-I/opt/homebrew/Cellar/libpq/18.4/include
