@@ -90,9 +90,9 @@ extern void seshcordDestroyPacket(struct seshpkt *pkt);
 #define SESHPKT_DATA(pkt) ((void *)(((uintptr_t)pkt) + sizeof(struct seshpkt)))
 #define SESHPKT_NEXT(pkt) ((struct seshpkt *)(((uintptr_t)pkt) + sizeof(struct seshpkt) + seshcord_be32_to_cpu(pkt->dataLength)))
 #define SESHPKT_WRITE_STR(out, src) strcpy((char *)(out), (src)); \
-	out = (uint8_t *)(((uintptr_t)(out)) + strlen((char *)(out)) + 2);
+	out = (uint8_t *)(((uintptr_t)(out)) + strlen((char *)(out)) + 1);
 #define SESHPKT_READ_STR(src, destPtr) destPtr = (char *)(src); \
-	src = (uint8_t *)(((uintptr_t)(src)) + strlen((char *)(src)) + 2);
+	src = (uint8_t *)(((uintptr_t)(src)) + strlen((char *)(src)) + 1);
 
 
 #define SESHPKT_MAX_DATALEN 65535
