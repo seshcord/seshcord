@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "packet_encoding.h"
+#include "endian_memcpy.h"
 
 /*
  * The different types of types we might want to decode. Makes typecasting
@@ -215,27 +216,39 @@ int encode_from_schema( void *packet_data,
 /*
  * Copy data from `from` to `to`, incrementing both to point to the next element.
  *
+ * from: A double-pointer to the source buffer. The target pointer is incremented after copying.
+ * to: A double-pointer to the destination buffer. The target pointer is incremented after copying.
+ * len: The number of bytes to copy.
+ * remain: The number of bytes remaining in the input buffer. If the data  requested to be copied would extend past the end of the buffer, the function returns with an error.
+ * isint: If true, the data to be copied is considered to be an integer in big-endian format, and will be converted to the native order on copy.
+ *
+ * Return: True if successful, else false.
+ *
  */
-int _decodebuf( char **from, void **to, int len, int remain, int isint ) 
+int decodebuf( char **from, void **to, int len, int remain, int isint ) 
 {
     if( len > remain ) return 0;
     fprintf( stderr, "Copying %i bytes\n", len ); 
-    memcpy( *to, *from, len );
+    if( isint )
+    {
+        b2n_memcpy( *to, *from, len );
+    }
+    else
+    {
+        memcpy( *to, *from, len );
+    }
     *from += len; 
     *to += len; 
     return 1;
 }
 
-/* The following are helper macros for decode_from_schema(). Basically the
- * converse of the macros used for the encode function. */
-/* FIXME: These should check if the relevant structure overruns the input
- * buffer and return with error if so */
+/* The following are helper macros for decode_from_schema(). They call decodebuf() with arguments sourced from local variables within the caller. */
+/* FIXME: These should check if the relevant structure overruns the input */
 
-#define decodebuffrom( from, s ) if( ! _decodebuf( from, &output, s, size - (input - buffer), 0 )) return -1
-#define decodebuf( s ) decodebuffrom( &input, s )
-#define decodebuft( t ) decodebuf( sizeof( u-> t ))
-/* FIXME: Deal with endianness: here */
-#define decodebufint( t ) do { decodebuft( t ); lastint = u-> t; fprintf( stderr, "Decoded an int %i\n", lastint ); } while( 0 )
+/*
+ * Decode from the input buffer to the output. The `remain` argument to decodebuf() is calculated based on the input pointer. The size argument is calculated based on `t`, which is the name of the relevant member of the `ptype` union. `i` specifies the value of the `isint` apgument. If decodebuf() returns an error, return from decode_from_schema with an error, */
+#define decodebuft( t, i ) if( ! decodebuf( &input, &output, sizeof( u-> t ), size - (input - buffer), i )) return -1
+#define decodebufint( t ) do { decodebuft( t, 1 ); lastint = u-> t; fprintf( stderr, "Decoded an int %i\n", lastint ); } while( 0 )
 
 /*
  * Decode a received packet (payload)
@@ -283,7 +296,7 @@ int decode_from_schema( void *packet_data,
             {
                 /* A UUID, just copy the data */
                 case PKT_ITEM_UUID: /* 128-bit */
-                    decodebuft( uuid );
+                    decodebuft( uuid, 0 );
                     break;
 
                 /* The basic integer types. Save the supplied value in
