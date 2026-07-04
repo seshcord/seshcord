@@ -83,7 +83,7 @@ void decodetest( void )
     malloc_group *mal = new_malloc_group( 256 );
 
     int res = decode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
-            testpacket, 32 /* sizeof( testpacket ) */, 1, mal );
+            testpacket, sizeof( testpacket ), 1, mal );
     if( res < 0 )
     {
         free_malloc_group( mal );
