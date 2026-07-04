@@ -5,8 +5,38 @@
 
 #include "packet_encoding.h"
 
-int main( void )
+#define STREAM stderr
+
+char *uuidtostr( uint8_t *uuid )
 {
+    static char buffer[33];
+    int i;
+    for( i = 0; i < 16; i++ ) sprintf( &buffer[i * 2], "%02x", uuid[i] );
+    return buffer;
+}
+
+void dumppacket( struct seshcord_sv_msg *p )
+{
+    fprintf( STREAM, "Started dumppacket\n" );
+    int i;
+    fprintf( STREAM, "ID: %s\n", uuidtostr( p->id ));
+    fprintf( STREAM, "Chat: %s\n", uuidtostr( p->chat ));
+    fprintf( STREAM, "Sender: %s\n", uuidtostr( p->sender ));
+    fprintf( STREAM, "Message: %s\n", p->content );
+    fprintf( STREAM, "Attachments: %i\n", p->attachCount );
+
+    for( i = 0; i < p->attachCount; i++ )
+    {
+        fprintf( STREAM, "---\nAttachment #%i\n", i + 1 );
+        fprintf( STREAM, "Filename: %s\n", p->attachments[i].filename );
+        fprintf( STREAM, "Size: %i\n", p->attachments[i].size );
+        fprintf( STREAM, "Path: %s\n", p->attachments[i].path );
+    }
+}
+
+void enctest( void )
+{
+    char buffer[256];
     /* Sample packet */
     struct seshcord_sv_msg test = {
         { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 }, /* id */
@@ -23,8 +53,13 @@ int main( void )
     test.attachments[1].filename = "cat.png";
     test.attachments[1].size = 1457664;
     test.attachments[1].path = "http://test.example.org/cat.png";
+    int res = encode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
+            buffer, sizeof( buffer ), 1 );
+    fprintf( STREAM, "size: %i\n", res );
+}
 
-    char buffer[256];
+void decodetest( void )
+{
     char testpacket[] = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* ID UUID */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* chat UUID */
@@ -44,38 +79,25 @@ int main( void )
         'c','a','t','.','p','n','g', 0
     };
 
-    struct seshcord_sv_msg test2;
+    struct seshcord_sv_msg test;
     malloc_group *mal = new_malloc_group( 256 );
 
-    int res = decode_from_schema( &test2, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
-            testpacket, res, 1, mal );
-    fprintf( stderr, "size: %i\n", res );
-
-    fprintf( stderr, "Message: %s\n", test2.content );
-    fprintf( stderr, "Attachments: %i\n", test2.attachCount );
-    fprintf( stderr, "Attachment 1 path: %s\n", test2.attachments[0].path );
-
-    fprintf( stderr, "Tets packet size: %i\n", sizeof( testpacket ));
-    /*
-    res = encode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
-            buffer, sizeof( buffer ), 1 );
-    fprintf( stderr, "size: %i\n", res );
-    */
-
+    int res = decode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
+            testpacket, 32 /* sizeof( testpacket ) */, 1, mal );
+    if( res < 0 )
+    {
+        free_malloc_group( mal );
+        fprintf( STREAM, "Returned with error.\n" );
+        return;
+    }
+    fprintf( STREAM, "Size: %i\n", res );
+    dumppacket( &test );
     free_malloc_group( mal );
-    return 0;
-    fprintf( stderr, "RE-READING\n" );
-    /* Write the actual packet to stdout so we can hexdump it and examine it */
-    /* fwrite( buffer, res, 1, stdout ); */
-    /* struct seshcord_sv_msg test2; */
-    res = decode_from_schema( &test2, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
-            buffer, res, 1, mal );
-    fprintf( stderr, "size: %i\n", res );
+}
 
-    fprintf( stderr, "Message: %s\n", test2.content );
-    fprintf( stderr, "Attachments: %i\n", test2.attachCount );
-    fprintf( stderr, "Attachment 1 path: %s\n", test2.attachments[0].path );
-
+int main( void )
+{
+    decodetest();
 
     return 0;
 }
