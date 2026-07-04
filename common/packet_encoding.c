@@ -6,6 +6,7 @@
 
 #include "packet_encoding.h"
 #include "endian_memcpy.h"
+#include "blurt.h"
 
 /*
  * The different types of types we might want to decode. Makes typecasting
@@ -47,8 +48,6 @@ int ptypesizes[] = {
     0, /* PKT_ITEM_END */
 };
 
-void ptui( char *, ... );
-
 /* 
  * The following are helper macros for encode_from_schema(). They reference
  * local variables within that function, and perform some macro magic
@@ -59,7 +58,7 @@ void ptui( char *, ... );
  * and `remain` counters accordingly */
 /* FIXME: Deal with endianness */
 #define copybuffrom( from, s ) \
-    fprintf( stderr, "Copying %i bytes\n", s ); \
+    blurt( "Copying %i bytes\n", s ); \
     size += s; \
     remain -= s; \
     if( remain >= 0 ) { \
@@ -82,7 +81,7 @@ void ptui( char *, ... );
 #define copybufsave( t ) \
     copybuft( t ); \
     lastint = u-> t ; \
-    fprintf( stderr, "Decoded an int %i\n", lastint )
+    blurt( "Decoded an int %i\n", lastint )
 
 /*
  * Encode a packet (payload) for transmission or calculate its size.
@@ -124,7 +123,7 @@ int encode_from_schema( void *packet_data,
         for( i = 0; i < len; i++ )
         {
             u = input;
-            fprintf( stderr, "Schema item type %i\n", schema[i] );
+            blurt( "Schema item type %i\n", schema[i] );
 
             switch( schema[i] )
             {
@@ -167,7 +166,7 @@ int encode_from_schema( void *packet_data,
                  * given pointer points. */
                 case PKT_ITEM_STR:
                     tmp = strlen( u->str ) + 1;
-                    fprintf( stderr, "Copying a string of size %i\n", tmp );
+                    blurt( "Copying a string of size %i\n", tmp );
                     copybuffrom( u->str, tmp );
                     input += sizeof( u->str );
                     break;
@@ -189,7 +188,7 @@ int encode_from_schema( void *packet_data,
                     lsize = 0; /* list schema size */
                     i++; /* Move past the list start marker */
                     while( schema[i + lsize] != PKT_ITEM_END ) lsize++;
-                    fprintf( stderr, "Processing list of size %i of %i elements\n", lsize,lastint );
+                    blurt( "Processing list of size %i of %i elements\n", lsize,lastint );
                     tmp = encode_from_schema( u->ptr, &schema[i], lsize, buffer, remain, lastint );
                     size += tmp;
                     remain -= tmp;
@@ -228,7 +227,7 @@ int encode_from_schema( void *packet_data,
 int decodebuf( char **from, void **to, int len, int remain, int isint ) 
 {
     if( len > remain ) return 0;
-    fprintf( stderr, "Copying %i bytes\n", len ); 
+    blurt( "Copying %i bytes\n", len ); 
     if( isint )
     {
         b2n_memcpy( *to, *from, len );
@@ -248,7 +247,7 @@ int decodebuf( char **from, void **to, int len, int remain, int isint )
 /*
  * Decode from the input buffer to the output. The `remain` argument to decodebuf() is calculated based on the input pointer. The size argument is calculated based on `t`, which is the name of the relevant member of the `ptype` union. `i` specifies the value of the `isint` apgument. If decodebuf() returns an error, return from decode_from_schema with an error, */
 #define decodebuft( t, i ) if( ! decodebuf( &input, &output, sizeof( u-> t ), size - (input - buffer), i )) return -1
-#define decodebufint( t ) do { decodebuft( t, 1 ); lastint = u-> t; fprintf( stderr, "Decoded an int %i\n", lastint ); } while( 0 )
+#define decodebufint( t ) do { decodebuft( t, 1 ); lastint = u-> t; blurt( "Decoded an int %i\n", lastint ); } while( 0 )
 
 /*
  * Decode a received packet (payload)
@@ -290,7 +289,7 @@ int decode_from_schema( void *packet_data,
         for( i = 0; i < len; i++ )
         {
             u = output;
-            fprintf( stderr, "Schema item type %i\n", schema[i] );
+            blurt( "Schema item type %i\n", schema[i] );
 
             switch( schema[i] )
             {
@@ -337,7 +336,7 @@ int decode_from_schema( void *packet_data,
                     tmp = strlen( input ) + 1;
                     u->str = new_malloc_entry( mal, sizeof( char ) * tmp );
                     strcpy( u->str, input );
-                    fprintf( stderr, "Copying a string of size %i: %s\n", tmp, u->str );
+                    blurt( "Copying a string of size %i: %s\n", tmp, u->str );
                     output += sizeof( u->str );
                     input += tmp;
                     break;
@@ -371,7 +370,7 @@ int decode_from_schema( void *packet_data,
                     if( tmp > 0 )
                     {
                         u->ptr = new_malloc_entry( mal, tmp * lsize );
-                        fprintf( stderr, "Processing list of size %i of %i elements\n", lsize,lastint );
+                        blurt( "Processing list of size %i of %i elements\n", lsize,lastint );
                         tmp2 = decode_from_schema( u->ptr, &schema[i], lsize, input, size - (input - buffer), lastint, mal );
                         input += tmp2;
 
@@ -399,13 +398,3 @@ int decode_from_schema( void *packet_data,
     return input - buffer;
 }
 
-/* Debugging output */
-
-void ptui( char *fmt, ... )
-{
-   va_list arg_ptr;
-
-   va_start( arg_ptr, fmt );
-   vfprintf( stderr, fmt, arg_ptr );
-   va_end( arg_ptr );
-}
