@@ -125,6 +125,13 @@ void decodetest( void )
                string. This should fail reading the string. */
         66, /* This should exactly read the string, and fail on the next
                element. */
+        67, /* Stop short of the attachments. This should fail due to
+               expecting 2 attachments, but not getting the data for any.
+               (The failure will be a string overrun, since it's expecting a
+               string there but there's no buffer left.) */
+        76, /* Cut off after the first attachment filename */
+        113, /* Stop just after the first attachment info */
+        156, /* One byte short of the full buffer */
     };
 
     int i;
