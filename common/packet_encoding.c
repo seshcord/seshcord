@@ -378,6 +378,7 @@ int decode_from_schema( void *packet_data,
                         u->ptr = new_malloc_entry( mal, tmp * lsize );
                         blurt( "Processing list of size %i of %i elements\n", lsize,lastint );
                         tmp2 = decode_from_schema( u->ptr, &schema[i], lsize, input, size - (input - buffer), lastint, mal );
+                        if( tmp2 < 0 ) return -1;
                         input += tmp2;
 
                     }
