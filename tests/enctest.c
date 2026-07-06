@@ -62,28 +62,28 @@ void decodetest( void )
 {
     /* Create a sample packet, as sent over the wire */
     char testpacket[] = {
+        /* 0: 3x16 byte UUIDs */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* ID UUID */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* chat UUID */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* sender UUID */
-        /* 48 */
+        /* 48: The message */
         'T','h','i','s',' ','i','s',' ',
         'a',' ','m','e','s','s','a','g',
-        'e', 0, /* Message */
-        /* 66 */
-        2, /* Attachment count */
-        /* 67 */
+        'e', 0,
+        /* 66: Attachment count */
+        2, 
+        /* 67: Attachment 1 filename */
         't','e','s','t','.','t','x','t',
-        0, /* Attachment 1 filename */
-        /* 76 */
-        0, 0, 0, 42, /* Attachment 1 size */
-        /* 80 */
+        0, 
+        /* 76: Attachment 1 size */
+        0, 0, 0, 42, 
+        /* 80: Attachment 1 path */
         'h','t','t','p',':','/','/','t',
         'e','s','t','.','e','x','a','m',
         'p','l','e','.','o','r','g','/',
         't','e','s','t','.','t','x','t',
-        /* 112 */
-        0, /* Attachment 1 path */
-        /* 113 */
+        0, 
+        /* 113: Attachment 2 data */
         'c','a','t','.','p','n','g', 0,
         /* 121 */
         0, 0x16, 0x3e, 0,
