@@ -333,7 +333,13 @@ int decode_from_schema( void *packet_data,
                 case PKT_ITEM_STR:
                     /* FIXME: Return with error if this "string" tries to
                      * overrun the input buffer */
-                    tmp = strlen( input ) + 1;
+                    tmp = strnlen( input, size - (input - buffer) ) + 1;
+                    if( input - buffer + tmp > size )
+                    {
+                        blurt( "String overran buffer\n" );
+                        return -1;
+                    }
+
                     u->str = new_malloc_entry( mal, sizeof( char ) * tmp );
                     strcpy( u->str, input );
                     blurt( "Copying a string of size %i: %s\n", tmp, u->str );

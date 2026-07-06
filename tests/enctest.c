@@ -60,39 +60,82 @@ void enctest( void )
 
 void decodetest( void )
 {
+    /* Create a sample packet, as sent over the wire */
     char testpacket[] = {
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* ID UUID */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* chat UUID */
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  /* sender UUID */
-        'T','h','i','s',' ','i','s',' ','a',' ',
-        'm','e','s','s','a','g','e', 0, /* Message */
-        2, /* Attachment coutn */
-        't','e','s','t','.','t','x','t', 0, /* Attachment 1 filename */
+        /* 48 */
+        'T','h','i','s',' ','i','s',' ',
+        'a',' ','m','e','s','s','a','g',
+        'e', 0, /* Message */
+        /* 66 */
+        2, /* Attachment count */
+        /* 67 */
+        't','e','s','t','.','t','x','t',
+        0, /* Attachment 1 filename */
+        /* 76 */
         0, 0, 0, 42, /* Attachment 1 size */
-        'h','t','t','p',':','/','/','t','e','s','t','.',
-        'e','x','a','m','p','l','e','.','o','r','g','/',
-        't','e','s','t','.','t','x','t', 0, /* Attachment 1 path */
+        /* 80 */
+        'h','t','t','p',':','/','/','t',
+        'e','s','t','.','e','x','a','m',
+        'p','l','e','.','o','r','g','/',
+        't','e','s','t','.','t','x','t',
+        /* 112 */
+        0, /* Attachment 1 path */
+        /* 113 */
         'c','a','t','.','p','n','g', 0,
+        /* 121 */
         0, 0x16, 0x3e, 0,
-        'h','t','t','p',':','/','/','t','e','s','t','.',
-        'e','x','a','m','p','l','e','.','o','r','g','/',
-        'c','a','t','.','p','n','g', 0
+        /* 125 */
+        'h','t','t','p',':','/','/','t',
+        'e','s','t','.','e','x','a','m',
+        'p','l','e','.','o','r','g','/',
+        'c','a','t','.','p','n','g', 0,
+        /* 157 */
     };
 
+    fprintf( STREAM, "%i\n", sizeof( testpacket ));
     struct seshcord_sv_msg test;
     malloc_group *mal = new_malloc_group( 256 );
 
-    int res = decode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
-            testpacket, sizeof( testpacket ), 1, mal );
+    /* Try to decode it: This should work. */
+    int res = decode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA,
+            SESHCORD_SV_MSG_SCHEMA_LEN, testpacket,
+            sizeof( testpacket ), 1, mal );
     if( res < 0 )
     {
-        free_malloc_group( mal );
         fprintf( STREAM, "Returned with error.\n" );
+        free_malloc_group( mal );
         return;
     }
     fprintf( STREAM, "Size: %i\n", res );
     dumppacket( &test );
-    free_malloc_group( mal );
+    fprintf( STREAM, "\n" );
+
+    /* Try to decode it the first N bytes. This should fail since the
+     * expected packet is larger than the supplied buffer, The relevant
+     * question is, *where* does it fail?
+     */
+    int partials[] = {
+        15, /* This should fail immediately since the first element is
+               expected to be 16. */
+        16, /* The first UUID should succeed, and then fail after that. */
+        65, /* This is one byte short of the null terminator of the first
+               string. This should fail reading the string. */
+        66, /* This should exactly read the string, and fail on the next
+               element. */
+    };
+
+    int i;
+    for( i = 0; i < sizeof( partials ) / sizeof( partials[0] ); i++ )
+    {
+        fprintf( STREAM, "First %i test:\n", partials[i] );
+        res = decode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA,
+                SESHCORD_SV_MSG_SCHEMA_LEN, testpacket,
+                partials[i], 1, mal );
+        fprintf( STREAM, "Result: %s\n\n", res < 0 ? "Fail" : "Success" );
+    }
 }
 
 int main( void )
