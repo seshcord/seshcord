@@ -214,8 +214,10 @@ int encode_from_schema( void *packet_data,
                     lsize = 0; /* list schema size */
                     i++; /* Move past the list start marker */
                     while( schema[i + lsize] != PKT_ITEM_END ) lsize++;
-                    blurt( "Processing list of size %i of %i elements\n", lsize,lastint );
-                    tmp = encode_from_schema( u->ptr, &schema[i], lsize, buffer, remain, lastint );
+                    blurt( "Processing list of size %i of %i elements\n",
+                            lsize,lastint );
+                    tmp = encode_from_schema( u->ptr, &schema[i], lsize,
+                            buffer, remain, lastint );
                     size += tmp;
                     remain -= tmp;
                     if( remain >= 0 ) buffer += tmp;
@@ -239,13 +241,18 @@ int encode_from_schema( void *packet_data,
 }
 
 /*
- * Copy data from `from` to `to`, incrementing both to point to the next element.
+ * Copy data from, incrementing both to point to the next element.
  *
- * from: A double-pointer to the source buffer. The target pointer is incremented after copying.
- * to: A double-pointer to the destination buffer. The target pointer is incremented after copying.
+ * from: A double-pointer to the source buffer. The target pointer is
+ *      incremented after copying.
+ * to: A double-pointer to the destination buffer. The target pointer is
+ *      incremented after copying.
  * len: The number of bytes to copy.
- * remain: The number of bytes remaining in the input buffer. If the data  requested to be copied would extend past the end of the buffer, the function returns with an error.
- * isint: If true, the data to be copied is considered to be an integer in big-endian format, and will be converted to the native order on copy.
+ * remain: The number of bytes remaining in the input buffer. If the data
+ *      requested to be copied would extend past the end of the buffer, the
+ *      function returns with an error.
+ * isint: If true, the data to be copied is considered to be an integer in
+ *      big-endian format, and will be converted to the native order on copy.
  *
  * Return: True if successful, else false.
  *
@@ -267,19 +274,26 @@ int decodebuf( char **from, void **to, int len, int remain, int isint )
     return 1;
 }
 
-/* The following are helper macros for decode_from_schema(). They call decodebuf() with arguments sourced from local variables within the caller. */
+/*
+ * The following are helper macros for decode_from_schema(). They call
+ * decodebuf() with arguments sourced from local variables within the caller.
+ */
 
 /*
- * Decode from the input buffer to the output. The `remain` argument to decodebuf() is calculated based on the input pointer. The size argument is calculated based on `t`, which is the name of the relevant member of the `ptype` union. `i` specifies the value of the `isint` apgument. If decodebuf() returns an error, return from decode_from_schema with an error, */
-#define decodebuft( t, i ) if( ! decodebuf( &input, &output, sizeof( u-> t ), size - (input - buffer), i )) return -1
-#define decodebufint( t ) do { decodebuft( t, 1 ); lastint = u-> t; blurt( "Decoded an int %i\n", lastint ); } while( 0 )
+ * Decode from the input buffer to the output. The `remain` argument to
+ * decodebuf() is calculated based on the input pointer. The size argument is
+ * calculated based on `t`, which is the name of the relevant member of the
+ * `ptype` union. `i` specifies the value of the `isint` apgument. If
+ * decodebuf() returns an error, return from decode_from_schema with an error,
+ */
+#define decodebuft( t, i ) if( ! decodebuf( &input, &output, sizeof( u-> t ), \
+            size - (input - buffer), i )) return -1
+#define decodebufint( t ) do { decodebuft( t, 1 ); lastint = u-> t; \
+    blurt( "Decoded an int %i\n", lastint ); } while( 0 )
 
 /*
  * Decode a received packet (payload)
  *
-int decode_from_schema( void *packet_data, 
-        enum packet_items * schema, int len,
-        char *buffer, int size, int count )
  * packet_data: A structure tgo decode data into
  * schema: The packet schema
  * len: Number of elements in the schema
@@ -402,8 +416,10 @@ int decode_from_schema( void *packet_data,
                     if( tmp > 0 )
                     {
                         u->ptr = new_malloc_entry( mal, tmp * lsize );
-                        blurt( "Processing list of size %i of %i elements\n", lsize,lastint );
-                        tmp2 = decode_from_schema( u->ptr, &schema[i], lsize, input, size - (input - buffer), lastint, mal );
+                        blurt( "Processing list of size %i of %i elements\n",
+                                lsize,lastint );
+                        tmp2 = decode_from_schema( u->ptr, &schema[i], lsize,
+                                input, size - (input - buffer), lastint, mal );
                         if( tmp2 < 0 ) return -1;
                         input += tmp2;
 
