@@ -48,11 +48,6 @@ int ptypesizes[] = {
     0, /* PKT_ITEM_END */
 };
 
-/* 
- * The following are helper macros for encode_from_schema(). They reference
- * local variables within that function, and perform some macro magic
- */
-
 /*
  * Copy data from one buffer to another, and update pointers.
  *
