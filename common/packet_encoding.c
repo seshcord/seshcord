@@ -53,33 +53,59 @@ int ptypesizes[] = {
  * local variables within that function, and perform some macro magic
  */
 
-
-/* Copy `s` bytes from `from` to the output buffer, and adjust the `size`
- * and `remain` counters accordingly */
-/* FIXME: Deal with endianness */
-#define copybuffrom( from, s ) \
-    blurt( "Copying %i bytes\n", s ); \
-    size += s; \
-    remain -= s; \
-    if( remain >= 0 ) { \
-        memcpy( buffer, from, s ); \
-        buffer += s; \
+/*
+ * Copy data from one buffer to another, and update pointers.
+ *
+ * from: The buffer to copy from.
+ * to: The buffer to copy to.
+ * size: The cumulative amount of data copied; incremented when copy is
+ *      performed.
+ * remain: The amount of space remaining in the buffer. If there is inadequate
+ *      space, the copy is not performed.
+ * len: The number of bytes to copy.
+ * incfrom: If true, increase the pointer to the source buffer by the amount
+ *      copied.
+ * isint: If true, copy from native byte order to big-endian.
+ */
+void encodebuf( void **from, char **to, int *size, int *remain,
+        int len, int incfrom, int isint )
+{
+    blurt( "Copying %i bytes\n", len );
+    *size += len;
+    *remain -= len;
+    if( *remain >= 0 )
+    {
+        if( isint )
+        {
+            n2b_memcpy( *to, *from, len );
+        }
+        else
+        {
+            memcpy( *to, *from, len );
+        }
+        *to += len;
     } 
+    if( incfrom ) *from += len;
+}
 
-/* Copy `s` bytes from the input pointer, and also update it */
-#define copybuf( s ) \
-    copybuffrom( input, s ) \
-    input += s;
+/*
+ * The following are helper macros for encode_from_schema. Thery call the
+ * encodebuf() function, feeding it local variables from within that function.
+ */
+
+/* Copy `s` bytes from `from` to the output buffer */
+#define encodebuffrom( from, s ) encodebuf( (void **) &from, \
+        &buffer, &size, &remain, s, 0, 0 )
 
 /* Copy the data pointed to by the input buffer, treating it as type `t`,
  * where `t` is a member of the `ptype` union, and not a "type" per se */
-#define copybuft( t ) \
-    copybuf( sizeof( u-> t ));
+#define encodebuft( t ) encodebuf( &input, &buffer, &size, &remain, \
+        sizeof( u-> t ), 1, 0 )
 
-/* Copy the data pointed to by the input buffer, and save it as an integer
- * in `lastint`. */
-#define copybufsave( t ) \
-    copybuft( t ); \
+/* Copy the data pointed to by the input buffer, save it as an integer
+ * in `lastint`, and perform endian-conversion as necessary. */
+#define encodebufint( t ) \
+    encodebuf( &input, &buffer, &size, &remain, sizeof( u-> t ), 1, 1 ); \
     lastint = u-> t ; \
     blurt( "Decoded an int %i\n", lastint )
 
@@ -92,7 +118,7 @@ int ptypesizes[] = {
  * buffer: The buffer to encode the raw binary data to
  * max: The length of the buffer.
  * count: The number of elements to encode. For a sublist, this is the
- * number of elements, otherwise 1.
+ *      number of elements, otherwise 1.
  *
  * return: The size of the encoded packet.
  *
@@ -129,36 +155,36 @@ int encode_from_schema( void *packet_data,
             {
                 /* A UUID, just copy the data */
                 case PKT_ITEM_UUID: /* 128-bit */
-                    copybuft( uuid );
+                    encodebuft( uuid );
                     break;
 
                 /* The basic integer types. Save the supplied value in
                  * `lastint` as it may be used to indicate the size of a
                  * sublist or binary blob */
                 case PKT_ITEM_INT64:
-                    copybufsave( int64 );
+                    encodebufint( int64 );
                     break;
                 case PKT_ITEM_UINT64:
                 case PKT_ITEM_TIME:
-                    copybufsave( uint64 );
+                    encodebufint( uint64 );
                     break;
                 case PKT_ITEM_INT32:
-                    copybufsave( int32 );
+                    encodebufint( int32 );
                     break;
                 case PKT_ITEM_UINT32:
-                    copybufsave( uint32 );
+                    encodebufint( uint32 );
                     break;
                 case PKT_ITEM_INT16:
-                    copybufsave( int16 );
+                    encodebufint( int16 );
                     break;
                 case PKT_ITEM_UINT16:
-                    copybufsave( uint16 );
+                    encodebufint( uint16 );
                     break;
                 case PKT_ITEM_INT8:
-                    copybufsave( int8 );
+                    encodebufint( int8 );
                     break;
                 case PKT_ITEM_UINT8:
-                    copybufsave( uint8 );
+                    encodebufint( uint8 );
                     break;
 
                 /* Null-terminated string; get its size and copy it. Note that
@@ -167,7 +193,7 @@ int encode_from_schema( void *packet_data,
                 case PKT_ITEM_STR:
                     tmp = strlen( u->str ) + 1;
                     blurt( "Copying a string of size %i\n", tmp );
-                    copybuffrom( u->str, tmp );
+                    encodebuffrom( u->str, tmp );
                     input += sizeof( u->str );
                     break;
 
@@ -175,7 +201,7 @@ int encode_from_schema( void *packet_data,
                  * size. As with str, this isn't copied directly from the input
                  * buffer. */
                 case PKT_ITEM_BINARY:
-                    copybuffrom( u->binary, lastint );
+                    encodebuffrom( u->binary, lastint );
                     input += sizeof( u->binary );
                     break;
 
@@ -242,7 +268,6 @@ int decodebuf( char **from, void **to, int len, int remain, int isint )
 }
 
 /* The following are helper macros for decode_from_schema(). They call decodebuf() with arguments sourced from local variables within the caller. */
-/* FIXME: These should check if the relevant structure overruns the input */
 
 /*
  * Decode from the input buffer to the output. The `remain` argument to decodebuf() is calculated based on the input pointer. The size argument is calculated based on `t`, which is the name of the relevant member of the `ptype` union. `i` specifies the value of the `isint` apgument. If decodebuf() returns an error, return from decode_from_schema with an error, */
@@ -331,8 +356,6 @@ int decode_from_schema( void *packet_data,
                  * we're not copying from the input buffer, but from where the
                  * given pointer points. */
                 case PKT_ITEM_STR:
-                    /* FIXME: Return with error if this "string" tries to
-                     * overrun the input buffer */
                     tmp = strnlen( input, size - (input - buffer) ) + 1;
                     if( input - buffer + tmp > size )
                     {
@@ -351,8 +374,11 @@ int decode_from_schema( void *packet_data,
                  * size. As with str, this isn't copied directly from the input
                  * buffer. */
                 case PKT_ITEM_BINARY:
-                    /* FIXME: Return with error if this blob is larger than
-                     * the remaining size of the input buffer */
+                    if( input - buffer + lastint > size )
+                    {
+                        blurt( "Binary blob overran buffer\n" );
+                        return -1;
+                    }
                     u->binary = new_malloc_entry( mal, lastint );
                     memcpy( u->binary, input, lastint );
                     output += sizeof( u->binary );

@@ -34,7 +34,7 @@ void dumppacket( struct seshcord_sv_msg *p )
     }
 }
 
-void enctest( void )
+void encodetest( void )
 {
     char buffer[256];
     /* Sample packet */
@@ -56,6 +56,7 @@ void enctest( void )
     int res = encode_from_schema( &test, SESHCORD_SV_MSG_SCHEMA, SESHCORD_SV_MSG_SCHEMA_LEN,
             buffer, sizeof( buffer ), 1 );
     fprintf( STREAM, "size: %i\n", res );
+    fwrite( buffer, res, 1, stdout );
 }
 
 void decodetest( void )
@@ -143,11 +144,60 @@ void decodetest( void )
                 partials[i], 1, mal );
         fprintf( STREAM, "Result: %s\n\n", res < 0 ? "Fail" : "Success" );
     }
+
+    free_malloc_group( mal );
+
+    /* Now we'll try one of these packets, mainly to test binary blob
+     * entries */
+    char testpacket2[] = {
+        /* 0: UUID */
+        0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,
+        /* 16: Message text */
+        'H','e','l','l','o',' ','w','o',
+        'r','l','d',0,
+        /* 28: Attachment count */
+        1,
+        /* 29: Attachment 1 filenanme */
+        't','e','s','t','.','t','x','t',
+        0,
+        /* 38: size */
+        0, 0, 0, 13,
+        /* 42: File data */
+        'H','e','l','l','o',',',' ','w',
+        'o','r','l','d','\n',
+        /* 55 */
+    };
+
+    fprintf( STREAM, "%i\n", sizeof( testpacket2 ));
+    struct seshcord_cl_send_msg test2;
+
+    mal = new_malloc_group( 256 );
+
+    /* Try to decode it: This should work. */
+    res = decode_from_schema( &test2, SESHCORD_CL_SEND_MSG_SCHEMA,
+            SESHCORD_CL_SEND_MSG_SCHEMA_LEN, testpacket2,
+            sizeof( testpacket2 ), 1, mal );
+    if( res < 0 )
+    {
+        fprintf( STREAM, "Returned with error.\n" );
+        free_malloc_group( mal );
+        return;
+    }
+    fprintf( STREAM, "Size: %i\n", res );
+    /* Decode with 1 byte missing from the end. This should fail because the
+     * specified binary blob overruns the bufgfger. */
+    res = decode_from_schema( &test2, SESHCORD_CL_SEND_MSG_SCHEMA,
+            SESHCORD_CL_SEND_MSG_SCHEMA_LEN, testpacket2,
+            sizeof( testpacket2 ) - 1, 1, mal );
+    fprintf( STREAM, "Short buffer result: %i\n", res );
+    free_malloc_group( mal );
+
 }
 
 int main( void )
 {
-    decodetest();
+    encodetest();
 
     return 0;
 }
