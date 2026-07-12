@@ -9,6 +9,170 @@
 /* The maximum length of a printed 64-bit number, plus nullterm */
 #define MAXINTSTR 22
 
+#define DECODE_ERR_MALLOC -1
+#define DECODE_ERR_PLACEHOLDER -2
+/*
+ * Decode a format string for db_prep
+ *
+ * cmd: The query to decode, with printf-style placeholders
+ * types_out: An array of the types that were decoded.
+ * query_out: The translated query
+ *
+ * Return: The number of arguments found, or:
+ *      DECODE_ERR_MALLOC: malloc() failure
+ *      DECODE_ERR_PLACEHOLDER Invalid format string
+ */
+static int decode_args( char *cmd,
+        enum db_param_types **types_out,
+        char **query_out )
+{
+    /* Number of arguments found */
+    int nargs = 0;
+    /* Pointer into cmd */
+    char *c;
+
+    /* See how many placeholders we have */
+    for( c = cmd; *c; c++ )
+    {
+        if( *c == '%' )
+        {
+            if( c[1] == '%' )
+            {
+                /* Ignore literal %'s (and bypass them) */
+                c++;
+            }
+            else if( c[1] )
+            {
+                /* Also ignore %'s at the end of a string */
+                nargs++;
+            }
+        }
+    }
+
+    /* The types we found */
+    enum db_param_types *types = malloc( sizeof( types ) * nargs );
+    if( types == NULL ) return DECODE_ERR_MALLOC;
+
+    /*
+     * Calculate the approximate length of the translated query.
+     *
+     * This is approximately the length of the provided query: Each "%x"
+     * translates to a "$n", unless there are more than 9 placeholders, in
+     * which case a "%x" might translate into an "$nn". So we'll allocate the
+     * length of the original, plus the number of placeholders. This should
+     * give enough space for up to 99 arguments, plus some extra.
+     */
+    int i = sizeof( char ) * (strlen( cmd ) + nargs + 1);
+    /* printf( "%i\n", i ); */
+
+    /* The translated query */
+    char *query = malloc( i );
+    if( query == NULL )
+    {
+        free( types );
+        return DECODE_ERR_MALLOC;
+    }
+
+    /* Pointer into query during population */
+    char *q = query; 
+    i = 0; /* Placeholder index/count */
+    for( c = cmd; *c; c++ )
+    {
+        if( *c == '%' )
+        {
+            c++;
+            switch( *c )
+            {
+                case 'i':
+                case 'd':
+                    types[i++] = INT;
+                    break;
+                case 'u':
+                    types[i++] = UINT;
+                    break;
+                case 'f':
+                case 'g':
+                    types[i++] = DOUBLE;
+                    break;
+                case 's':
+                    types[i++] = STRING;
+                    break;
+                case 'l':
+                    c++;
+                    switch( *c )
+                    {
+                        case 'i':
+                        case 'd':
+                            types[i++] = LONG;
+                            break;
+                        case 'u':
+                            types[i++] = ULONG;
+                            break;
+                        case 'l':
+                            c++;
+                            switch( *c )
+                            {
+                                case 'i':
+                                case 'd':
+                                    types[i++] = LONGLONG;
+                                    break;
+                                case 'u':
+                                    types[i++] = ULONGLONG;
+                                    break;
+                                default:
+                                    free( types );
+                                    free( query );
+                                    return DECODE_ERR_PLACEHOLDER;
+                            }
+                            break;
+                        default:
+                            free( types );
+                            free( query );
+                            return DECODE_ERR_PLACEHOLDER;
+                    }
+                    break;
+                case 'L':
+                    c++;
+                    switch( *c )
+                    {
+                        case 'f':
+                        case 'g':
+                            types[i++] = LDOUBLE;
+                            break;
+                        default:
+                            free( types );
+                            free( query );
+                            return DECODE_ERR_PLACEHOLDER;
+                    }
+                    break;
+                case '%':
+                    /* We'll handle this below */
+                    break;
+                default:
+                    free( types );
+                    free( query );
+                    return DECODE_ERR_PLACEHOLDER;
+            }
+            if( *c == '%' )
+            {
+                *q++ = '%';
+            }
+            else
+            {
+                q += sprintf( q, "$%i", i );
+            }
+        }
+        else
+        {
+            *q++ = *c;
+        }
+    }
+    *q = 0;
+    *query_out = query;
+    *types_out = types;
+    return nargs;
+}
+
 /*
  * Create a prepared SQL statement for use later.
  *
@@ -43,18 +207,18 @@
  *
  * return: A new dynamically allocated db_prepared structure, or NULL if one
  * couldn't be allocated. If an error occurred, the `status` member will
- * contain the error.
+ * contain the error:
+ *  DB_BAD_CONN: Passed a null or invalid connection.
+ *  DB_MALLOC_ERROR: Failed to malloc memory.
+ *  DB_INVALID_PLACEHOLDER: The query had an invalid placeholder.
+ *  DB_CONN_ERROR: PostgreSQL returned an error.
+ *
  */
-
 db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
 {
-    int i;      /* Generic loop index */
-    char *c;    /* Generic string loop pointer */
-    int count;  /* Generic counter */
-    char *query; /* Translated query */
-
     db_prepared *prep = malloc( sizeof( db_prepared ));
     if( prep == NULL ) return NULL;
+
     prep->conn = NULL;
     prep->name = NULL;
     prep->query = NULL;
@@ -69,210 +233,84 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
     }
     prep->conn = conn;
 
-    prep->name = malloc( sizeof( char ) * (strlen( name ) + 1) );
+    prep->name = strdup( name );
     if( prep->name == NULL )
     {
         prep->status = DB_MALLOC_ERROR;
         return prep;
     }
-    strcpy( prep->name, name );
 
-    /* See how many placeholders we have */
-    count = 0;
-    for( c = cmd; *c; c++ )
-    {
-        if( *c == '%' )
-        {
-            if( c[1] == '%' )
-            {
-                /* Ignore literal %'s (and bypass them) */
-                c++;
-            }
-            else if( c[1] )
-            {
-                /* Also ignore %'s at the end of a string */
-                count++;
-            }
-        }
-    }
+    prep->nparams = decode_args( cmd, &prep->types, &prep->query );
 
-    prep->types = malloc( sizeof( prep->types ) * count );
-    if( prep->types == NULL )
+    if( prep->nparams == DECODE_ERR_MALLOC )
     {
         prep->status = DB_MALLOC_ERROR;
         return prep;
     }
-
-    prep->nparams = count;
-
-    /*
-     * Calculate the approximate length of the translated query.
-     *
-     * This is approximately the length of the provided query: Each "%x"
-     * translates to a "$n", unless there are more than 9 placeholders, in
-     * which case a "%x" might translate into an "$nn". So we'll allocate the
-     * length of the original, plus the number of placeholders. This should
-     * give enough space for up to 99 arguments, plus some extra.
-     */
-    i = sizeof( char ) * (strlen( cmd ) + count + 1);
-    /* printf( "%i\n", i ); */
-    query = malloc( i );
-    if( query == NULL )
+    if( prep->nparams == DECODE_ERR_PLACEHOLDER )
     {
-        prep->status = DB_MALLOC_ERROR;
+        prep->status = DB_INVALID_PLACEHOLDER;
         return prep;
     }
-    prep->query = query;
 
-    char *q = query; /* Pointer into query during population */
-    i = 0; /* Placeholder index/count */
-    for( c = cmd; *c; c++ )
+    PGresult *res = PQprepare( conn, name,
+            prep->query, prep->nparams, NULL );
+    if( PQresultStatus( res ) != PGRES_COMMAND_OK )
     {
-        if( *c == '%' )
-        {
-            c++;
-            switch( *c )
-            {
-                case 'i':
-                case 'd':
-                    prep->types[i++] = INT;
-                    break;
-                case 'u':
-                    prep->types[i++] = UINT;
-                    break;
-                case 'f':
-                case 'g':
-                    prep->types[i++] = DOUBLE;
-                    break;
-                case 's':
-                    prep->types[i++] = STRING;
-                    break;
-                case 'l':
-                    c++;
-                    switch( *c )
-                    {
-                        case 'i':
-                        case 'd':
-                            prep->types[i++] = LONG;
-                            break;
-                        case 'u':
-                            prep->types[i++] = ULONG;
-                            break;
-                        case 'l':
-                            c++;
-                            switch( *c )
-                            {
-                                case 'i':
-                                case 'd':
-                                    prep->types[i++] = LONGLONG;
-                                    break;
-                                case 'u':
-                                    prep->types[i++] = ULONGLONG;
-                                    break;
-                                default:
-                                    prep->status = DB_INVALID_PLACEHOLDER;
-                                    free( query );
-                                    return prep;
-                            }
-                            break;
-                        default:
-                            prep->status = DB_INVALID_PLACEHOLDER;
-                            free( query );
-                            return prep;
-                    }
-                    break;
-                case 'L':
-                    c++;
-                    switch( *c )
-                    {
-                        case 'f':
-                        case 'g':
-                            prep->types[i++] = LDOUBLE;
-                            break;
-                        default:
-                            prep->status = DB_INVALID_PLACEHOLDER;
-                            free( query );
-                            return prep;
-                    }
-                    break;
-                case '%':
-                    /* We'll handle this below */
-                    break;
-                default:
-                    prep->status = DB_INVALID_PLACEHOLDER;
-                    free( query );
-                    return prep;
-            }
-            if( *c == '%' )
-            {
-                *q++ = '%';
-            }
-            else
-            {
-                q += sprintf( q, "$%i", i );
-            }
-        }
-        else
-        {
-            *q++ = *c;
-        }
+        prep->status = DB_CONN_ERROR;
     }
-    *q = 0;
-
-    PGresult *res = PQprepare( conn, name, query, prep->nparams, NULL );
-    if( PQresultStatus( res ) != PGRES_COMMAND_OK ) prep->status = DB_CONN_ERROR;
     PQclear( res );
     return prep;
 }
 
 /*
- * Helper macro for db_exec. Converts the current argument (args[i] from the
- * caller), of the given type `f`, using the printf formatting code `f`,
+ * Helper macro for convert_args. Converts the current argument (args[i] from
+ * the caller), of the given type `f`, using the printf formatting code `f`,
  * store it in the target string (`c` from the caller), and break out of the
  * enclosing switch()
  */
-#define procarg( f, t ) args[i] = c; \
+#define procarg( f, t ) \
+    args[i] = c; \
     c += sprintf( c, f, va_arg( vargs, t )); \
     break
 
 /*
- * Call a prepared statement returned by db_prep
+ * Convert a list of arguments to an array of strings.
  *
- * This function accepts the arguments described by the `cmd` argument to
- * db_prep(), and executes the command.
+ * nparams: The number of arguments supplied
+ * types: The types of the arguments, as returned by decode_args()
+ * vargs: The arguments
  *
- * Note that this returns results in text format.
+ * Return: An array of strings, or NULL if memory couldn't be allocated. This
+ * pointer should be free()d when no longer needed (which also frees the string
+ * data, as it is all allocated in a single chunk)
  */
-PGresult *db_exec( db_prepared *prep, ... )
+static char **convert_args(
+        int nparams, enum db_param_types *types, va_list vargs )
 {
-    char **args; /* Array of arguments */
-    args = malloc( sizeof( char * ) * prep->nparams );
-    if( args == NULL )
-    {
-        prep->status = DB_MALLOC_ERROR;
-        return NULL;
-    }
-
-    char *argstr; /* Storage for actual argument strings */
-    /* Allocate one chunk of memory for all the numeric strings we might
-     * possibly need. */
-    argstr = malloc( sizeof( char ) * MAXINTSTR * prep->nparams );
-    if( argstr == NULL )
-    {
-        prep->status = DB_MALLOC_ERROR;
-        free( args );
-        return NULL;
-    }
+    /* Array of arguments */
+    char **args;
+    /* The size of that array */
+    int asize = sizeof( char * ) * nparams;      
+    /* Allocate one chunk for everything we need. Mainly because this will be
+     * the return value, and can be freed by the caller. */
+    void *chunk = malloc(
+            /* The argument array */
+            asize
+            /* All the string storage we might need */
+            + sizeof( char ) * MAXINTSTR * nparams
+            );
+    if( chunk == NULL ) return NULL;
+    args = chunk;
 
     /* Convert all the given args into strings. */
 
-    char *c = argstr; /* Pointer into `argstr` as we use it */
+    /* Pointer into string space as we use it */
+    char *c = chunk + asize;
     int i; /* Loop index */
-    va_list vargs;
-    va_start( vargs, prep );
-    for( int i = 0; i < prep->nparams; i++ )
+    for( int i = 0; i < nparams; i++ )
     {
-        switch( prep->types[i] )
+        switch( types[i] )
         {
             case CHAR:
                 /* We're not actually using this as it turns out */
@@ -306,7 +344,31 @@ PGresult *db_exec( db_prepared *prep, ... )
             case LDOUBLE: procarg( "%Lf", long double );
         }
     }
+
+    return args;
+}
+
+/*
+ * Call a prepared statement returned by db_prep
+ *
+ * This function accepts the arguments described by the `cmd` argument to
+ * db_prep(), and executes the command.
+ *
+ * Note that this returns results in text format.
+ */
+PGresult *db_exec( db_prepared *prep, ... )
+{
+    va_list vargs;
+    va_start( vargs, prep );
+
+    /* Array of arguments */
+    char **args = convert_args( prep->nparams, prep->types, vargs );
     va_end( vargs );
+    if( args == NULL )
+    {
+        prep->status = DB_MALLOC_ERROR;
+        return NULL;
+    }
 
     PGresult *res = NULL;
 
@@ -316,10 +378,8 @@ PGresult *db_exec( db_prepared *prep, ... )
             NULL, /* ...Likewise for formats */
             0 /* Results in text format. */ );
     free( args );
-    free( argstr );
     return res;
 }
-
 /* 
  * Free a prepared statement created by db_prep().
  *
@@ -337,4 +397,34 @@ void db_free_prepped( db_prepared *prep )
     if( prep->types != NULL ) free( prep->types );
     
     free( prep );
+}
+
+PGresult *db_exec_direct( PGconn *conn, char *cmd, ... )
+{
+    if( conn == NULL ) return NULL;
+    enum db_param_types *types;
+    char *query;
+    int nparams = decode_args( cmd, &types, &query );
+
+    if( nparams == DECODE_ERR_MALLOC ||
+            nparams == DECODE_ERR_PLACEHOLDER )
+    {
+        return NULL;
+    }
+
+    va_list vargs;
+    va_start( vargs, cmd );
+    char **args = convert_args( nparams, types, vargs );
+    va_end( vargs );
+    if( args == NULL ) return NULL;
+
+    PGresult *res = NULL;
+    res = PQexecParams( conn, query, nparams,
+            NULL, /* Parameter types: not needed for string args */
+            (const char * const *) /* C sucks */ args,
+            NULL, /* Parameter lengths: not needed for string args */
+            NULL, /* ...Likewise for formats */
+            0 /* Results in text format. */ );
+    free( args );
+    return res;
 }

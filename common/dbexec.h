@@ -46,4 +46,5 @@ typedef struct db_prepared
 
 db_prepared *db_prep( PGconn *, char *, char * );
 PGresult *db_exec( db_prepared *, ... );
+PGresult *db_exec_direct( PGconn *, char *, ... );
 void db_free_prepped( db_prepared *);
