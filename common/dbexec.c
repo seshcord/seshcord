@@ -22,12 +22,15 @@
  *      DECODE_ERR_MALLOC: malloc() failure
  *      DECODE_ERR_PLACEHOLDER Invalid format string
  */
-static int decode_args( char *cmd,
+/* static */ int decode_args( char *cmd,
         enum db_param_types **types_out,
+        enum db_param_types **otypes_out,
+        int *oargs_out,
         char **query_out )
 {
     /* Number of arguments found */
     int nargs = 0;
+    int oargs = 0;
     /* Pointer into cmd */
     char *c;
 
@@ -41,6 +44,11 @@ static int decode_args( char *cmd,
                 /* Ignore literal %'s (and bypass them) */
                 c++;
             }
+            else if( c[1] == '-' )
+            {
+                /* An output argument */
+                oargs++;
+            }
             else if( c[1] )
             {
                 /* Also ignore %'s at the end of a string */
@@ -51,7 +59,13 @@ static int decode_args( char *cmd,
 
     /* The types we found */
     enum db_param_types *types = malloc( sizeof( types ) * nargs );
-    if( types == NULL ) return DECODE_ERR_MALLOC;
+    enum db_param_types *otypes = malloc( sizeof( types ) * oargs );
+    if( types == NULL || otypes == NULL )
+    {
+        free( types );
+        free( otypes );
+        return DECODE_ERR_MALLOC;
+    }
 
     /*
      * Calculate the approximate length of the translated query.
@@ -70,32 +84,47 @@ static int decode_args( char *cmd,
     if( query == NULL )
     {
         free( types );
+        free( otypes );
         return DECODE_ERR_MALLOC;
     }
 
     /* Pointer into query during population */
     char *q = query; 
-    i = 0; /* Placeholder index/count */
+    /* Placeholder index/count */
+    i = 0; 
+    int o = 0;
+
+    /* Is this an output argument? */
+    int oarg = 0; 
+    /* The type we just decoded */
+    enum db_param_types thistype;
+
     for( c = cmd; *c; c++ )
     {
+        oarg = 0;
         if( *c == '%' )
         {
             c++;
+            if( *c == '-' )
+            {
+                oarg = 1;
+                c++;
+            }
             switch( *c )
             {
                 case 'i':
                 case 'd':
-                    types[i++] = INT;
+                    thistype = INT;
                     break;
                 case 'u':
-                    types[i++] = UINT;
+                    thistype = UINT;
                     break;
                 case 'f':
                 case 'g':
-                    types[i++] = DOUBLE;
+                    thistype = DOUBLE;
                     break;
                 case 's':
-                    types[i++] = STRING;
+                    thistype = STRING;
                     break;
                 case 'l':
                     c++;
@@ -103,10 +132,10 @@ static int decode_args( char *cmd,
                     {
                         case 'i':
                         case 'd':
-                            types[i++] = LONG;
+                            thistype = LONG;
                             break;
                         case 'u':
-                            types[i++] = ULONG;
+                            thistype = ULONG;
                             break;
                         case 'l':
                             c++;
@@ -114,18 +143,20 @@ static int decode_args( char *cmd,
                             {
                                 case 'i':
                                 case 'd':
-                                    types[i++] = LONGLONG;
+                                    thistype = LONGLONG;
                                     break;
                                 case 'u':
-                                    types[i++] = ULONGLONG;
+                                    thistype = ULONGLONG;
                                     break;
                                 default:
                                     free( types );
+                                    free( otypes );
                                     free( query );
                                     return DECODE_ERR_PLACEHOLDER;
                             }
                             break;
                         default:
+                            free( otypes );
                             free( types );
                             free( query );
                             return DECODE_ERR_PLACEHOLDER;
@@ -137,10 +168,11 @@ static int decode_args( char *cmd,
                     {
                         case 'f':
                         case 'g':
-                            types[i++] = LDOUBLE;
+                            thistype = LDOUBLE;
                             break;
                         default:
                             free( types );
+                            free( otypes );
                             free( query );
                             return DECODE_ERR_PLACEHOLDER;
                     }
@@ -150,6 +182,7 @@ static int decode_args( char *cmd,
                     break;
                 default:
                     free( types );
+                    free( otypes );
                     free( query );
                     return DECODE_ERR_PLACEHOLDER;
             }
@@ -157,8 +190,13 @@ static int decode_args( char *cmd,
             {
                 *q++ = '%';
             }
+            else if( oarg )
+            {
+                otypes[o++] = thistype;
+            }
             else
             {
+                types[i++] = thistype;
                 q += sprintf( q, "$%i", i );
             }
         }
@@ -170,6 +208,8 @@ static int decode_args( char *cmd,
     *q = 0;
     *query_out = query;
     *types_out = types;
+    *otypes_out = otypes;
+    *oargs_out = oargs;
     return nargs;
 }
 
@@ -223,7 +263,9 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
     prep->name = NULL;
     prep->query = NULL;
     prep->nparams = 0;
+    prep->oparams = 0;
     prep->types = NULL;
+    prep->otypes = NULL;
     prep->status = DB_OK;
 
     if( conn == NULL )
@@ -240,7 +282,8 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
         return prep;
     }
 
-    prep->nparams = decode_args( cmd, &prep->types, &prep->query );
+    prep->nparams = decode_args( cmd,
+            &prep->types, &prep->otypes, &prep->oparams, &prep->query );
 
     if( prep->nparams == DECODE_ERR_MALLOC )
     {
@@ -348,6 +391,92 @@ static char **convert_args(
     return args;
 }
 
+int vconvert_results( PGresult *result, int nparams,
+        enum db_param_types *types, int row, va_list vargs )
+{
+    for( int i = 0; i < nparams; i++ )
+    {
+        char *value = PQgetvalue( result, row, i );
+        switch( types[i] )
+        {
+#define DECODE_ARG( e, t, f ) \
+            case e : *(va_arg( vargs, t )) = f( value, NULL, 10 ); \
+                     break
+            DECODE_ARG( CHAR, char *, strtol );
+            DECODE_ARG( SHORT, short *, strtol );
+            DECODE_ARG( USHORT, unsigned short *, strtoul );
+            DECODE_ARG( INT, int *, strtol );
+            DECODE_ARG( UINT, unsigned int *, strtoul );
+            DECODE_ARG( LONG, long *, strtol );
+            DECODE_ARG( ULONG, unsigned long *, strtoul );
+            DECODE_ARG( LONGLONG, long long *, strtoll );
+            DECODE_ARG( ULONGLONG, unsigned long long *, strtoull );
+
+#define DECODE_ARG2( e, t, f ) \
+            case e : *(va_arg( vargs, t )) = f( value, NULL ); \
+                     break
+            DECODE_ARG2( FLOAT, float *, strtof );
+            DECODE_ARG2( DOUBLE, double *, strtod );
+            DECODE_ARG2( LDOUBLE, long double *, strtold );
+
+            case STRING:
+            *(va_arg( vargs, char ** )) = value;
+            break;
+        }
+    }
+
+    return 0;
+}
+
+int convert_results( PGresult *result, int nparams,
+        enum db_param_types *types, int row, ...)
+{
+    va_list vargs ;
+    va_start( vargs, row );
+    int res = vconvert_results( result, nparams, types, row, vargs );
+    va_end( vargs );
+    return res;
+}
+
+
+db_result *init_result( PGresult *res, db_prepared *prep,
+        int oparams, enum db_param_types *otypes )
+{
+    db_result *r = malloc( sizeof( db_result ));
+    if( r == NULL ) return NULL;
+
+    r->res = res;
+    r->nrows = PQntuples( res );
+    r->status = PQresultStatus( res );
+    r->prep = prep;
+    if( prep != NULL )
+    {
+        r->oparams = prep->oparams;
+        r->otypes = prep->otypes;
+    }
+    else
+    {
+        r->oparams = oparams;
+        r->otypes = otypes;
+    }
+    r->row = 0;
+
+    return r;
+}
+
+void db_free_result( db_result *r )
+{
+    if( r == NULL ) return;
+    PQclear( r->res );
+    if( r->prep == NULL )
+    {
+        /* Only free this if it doesn't belong to the prepared statement */
+        free( r->otypes );
+    }
+
+    free( r );
+}
+
 /*
  * Call a prepared statement returned by db_prep
  *
@@ -356,14 +485,10 @@ static char **convert_args(
  *
  * Note that this returns results in text format.
  */
-PGresult *db_exec( db_prepared *prep, ... )
+PGresult *vdb_exec( db_prepared *prep, va_list vargs )
 {
-    va_list vargs;
-    va_start( vargs, prep );
-
     /* Array of arguments */
     char **args = convert_args( prep->nparams, prep->types, vargs );
-    va_end( vargs );
     if( args == NULL )
     {
         prep->status = DB_MALLOC_ERROR;
@@ -380,6 +505,36 @@ PGresult *db_exec( db_prepared *prep, ... )
     free( args );
     return res;
 }
+
+PGresult *db_exec( db_prepared *prep, ... )
+{
+    va_list vargs;
+    va_start( vargs, prep );
+    PGresult *res = vdb_exec( prep, vargs );
+    va_end( vargs );
+}
+
+db_result *db_exec_wrap( db_prepared *prep, ... )
+{
+    va_list vargs;
+    va_start( vargs, prep );
+    PGresult *res = vdb_exec( prep, vargs );
+    va_end( vargs );
+    return init_result( res, prep, 0, NULL );
+}
+
+int db_fetch( db_result *res, ... )
+{
+    if( res->row >= res->nrows ) return 0;
+
+    va_list vargs;
+    va_start( vargs, res );
+    vconvert_results( res->res, res->oparams, res->otypes, res->row++, vargs );
+    va_end( vargs );
+
+    return 1;
+}
+
 /* 
  * Free a prepared statement created by db_prep().
  *
@@ -392,10 +547,10 @@ void db_free_prepped( db_prepared *prep )
 {
     if( prep == NULL ) return;
 
-    if( prep->name != NULL ) free( prep->name );
-    if( prep->query != NULL ) free( prep->query );
-    if( prep->types != NULL ) free( prep->types );
-    
+    free( prep->name );
+    free( prep->query );
+    free( prep->types );
+    free( prep->otypes );
     free( prep );
 }
 
@@ -403,8 +558,10 @@ PGresult *db_exec_direct( PGconn *conn, char *cmd, ... )
 {
     if( conn == NULL ) return NULL;
     enum db_param_types *types;
+    enum db_param_types *otypes;
+    int oargs;
     char *query;
-    int nparams = decode_args( cmd, &types, &query );
+    int nparams = decode_args( cmd, &types, &otypes, &oargs, &query );
 
     if( nparams == DECODE_ERR_MALLOC ||
             nparams == DECODE_ERR_PLACEHOLDER )
