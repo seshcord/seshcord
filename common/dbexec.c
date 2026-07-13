@@ -110,6 +110,7 @@
                 oarg = 1;
                 c++;
             }
+            /* FIXME: Handle floats, chars and shorts */
             switch( *c )
             {
                 case 'i':
@@ -353,6 +354,7 @@ static char **convert_args(
     int i; /* Loop index */
     for( int i = 0; i < nparams; i++ )
     {
+        /* FIXME: Handle chars, floats and shorts */
         switch( types[i] )
         {
             case CHAR:
