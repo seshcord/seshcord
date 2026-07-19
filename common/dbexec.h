@@ -65,9 +65,10 @@ typedef struct db_result
 } db_result;
 
 db_prepared *db_prep( PGconn *, char *, char * );
-PGresult *db_exec( db_prepared *, ... );
-db_result *db_exec_wrap( db_prepared *, ... );
-PGresult *db_exec_direct( PGconn *, char *, ... );
+db_result *db_exec_prep( db_prepared *, ... );
+db_result *db_exec( PGconn *, char *, ... );
+db_result *db_exec_inline( PGconn *, char *, ... );
+db_result *db_exec_prep_inline( db_prepared *, ... );
 int db_fetch( db_result *, ... );
-void db_free_prepped( db_prepared *);
 void db_free_result( db_result *);
+void db_free_prep( db_prepared *);
