@@ -12,9 +12,9 @@
 #define DECODE_ERR_MALLOC -1
 #define DECODE_ERR_PLACEHOLDER -2
 
-static db_result *vdb_exec( PGconn *, char *, va_list );
-static db_result *vdb_exec_prep( db_prepared *prep, va_list vargs );
-static int vdb_fetch( db_result *, va_list );
+static db_result *db_vexec( PGconn *, char *, va_list );
+static db_result *db_vexec_prep( db_prepared *prep, va_list vargs );
+static int db_vfetch( db_result *, va_list );
 static int decode_args( char *, enum db_param_types **,
         enum db_param_types **, int *, char ** );
 static char **convert_args( int nparams, enum db_param_types *,
@@ -143,7 +143,7 @@ db_result *db_exec_prep( db_prepared *prep, ... )
 {
     va_list vargs;
     va_start( vargs, prep );
-    db_result *out = vdb_exec_prep( prep, vargs );
+    db_result *out = db_vexec_prep( prep, vargs );
     va_end( vargs );
     return out;
 }
@@ -162,7 +162,7 @@ db_result *db_exec( PGconn *conn, char *cmd, ... )
 {
     va_list vargs;
     va_start( vargs, cmd );
-    db_result *res = vdb_exec( conn, cmd, vargs );
+    db_result *res = db_vexec( conn, cmd, vargs );
     va_end( vargs );
     return res;
 }
@@ -198,8 +198,8 @@ db_result *db_exec_inline( PGconn *conn, char *cmd, ... )
 {
     va_list vargs;
     va_start( vargs, cmd );
-    db_result *res = vdb_exec( conn, cmd, vargs );
-    if( res != NULL ) vdb_fetch( res, vargs );
+    db_result *res = db_vexec( conn, cmd, vargs );
+    if( res != NULL ) db_vfetch( res, vargs );
     va_end( vargs );
     return res;
 }
@@ -208,8 +208,8 @@ db_result *db_exec_prep_inline( db_prepared *prep, ... )
 {
     va_list vargs;
     va_start( vargs, prep );
-    db_result *res = vdb_exec_prep( prep, vargs );
-    if( res != NULL ) vdb_fetch( res, vargs );
+    db_result *res = db_vexec_prep( prep, vargs );
+    if( res != NULL ) db_vfetch( res, vargs );
     va_end( vargs );
     return res;
 }
@@ -228,7 +228,7 @@ int db_fetch( db_result *res, ... )
 {
     va_list vargs;
     va_start( vargs, res );
-    int out = vdb_fetch( res, vargs );
+    int out = db_vfetch( res, vargs );
     va_end( vargs );
     return out;
 }
@@ -278,7 +278,7 @@ void db_free_prep( db_prepared *prep )
 /*
  * db_exec(), but takes a va_list (The actual meat of db_exec)
  */
-static db_result *vdb_exec( PGconn *conn, char *cmd, va_list vargs )
+static db_result *db_vexec( PGconn *conn, char *cmd, va_list vargs )
 {
     if( conn == NULL ) return NULL;
     enum db_param_types *types;
@@ -314,7 +314,7 @@ static db_result *vdb_exec( PGconn *conn, char *cmd, va_list vargs )
 /*
  * db_exec_prep() but takes a va_list
  */
-static db_result *vdb_exec_prep( db_prepared *prep, va_list vargs )
+static db_result *db_vexec_prep( db_prepared *prep, va_list vargs )
 {
     /* Array of arguments */
     char **args = convert_args( prep->nparams, prep->types, vargs );
@@ -339,7 +339,7 @@ static db_result *vdb_exec_prep( db_prepared *prep, va_list vargs )
 /*
  * db_fetch(), but takes a va_list
  */
-static int vdb_fetch( db_result *res, va_list vargs )
+static int db_vfetch( db_result *res, va_list vargs )
 {
     if( res->row >= res->nrows ) return 0;
 
