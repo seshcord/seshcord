@@ -4,7 +4,7 @@
  * Copyright (C) 2026 Nathan Roberts
  */
 
-#include "dbexec.h"
+#include "sqlf.h"
 
 /* The maximum length of a printed 64-bit number, plus nullterm */
 #define MAXINTSTR 22
