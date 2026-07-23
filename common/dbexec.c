@@ -12,19 +12,19 @@
 #define DECODE_ERR_MALLOC -1
 #define DECODE_ERR_PLACEHOLDER -2
 
-static db_result *db_vexec( PGconn *, char *, va_list );
-static db_result *db_vexec_prep( db_prepared *prep, va_list vargs );
-static int db_vfetch( db_result *, va_list );
-static int decode_args( char *, enum db_param_types **,
-        enum db_param_types **, int *, char ** );
-static char **convert_args( int nparams, enum db_param_types *,
+static sqlf_result *sqlf_vexec( PGconn *, char *, va_list );
+static sqlf_result *sqlf_vexec_prep( sqlf_prepared *prep, va_list vargs );
+static int sqlf_vfetch( sqlf_result *, va_list );
+static int decode_args( char *, enum sqlf_param_types **,
+        enum sqlf_param_types **, int *, char ** );
+static char **convert_args( int nparams, enum sqlf_param_types *,
         va_list );
 static int convert_results( PGresult *, int,
-        enum db_param_types *, int, ... );
+        enum sqlf_param_types *, int, ... );
 static int vconvert_results( PGresult *, int,
-        enum db_param_types *, int, va_list vargs );
-static db_result *init_result( PGresult *, db_prepared *,
-        int, enum db_param_types * );
+        enum sqlf_param_types *, int, va_list vargs );
+static sqlf_result *init_result( PGresult *, sqlf_prepared *,
+        int, enum sqlf_param_types * );
 
 /* ------------------------------------------------------------ */
 /* External interface */
@@ -37,7 +37,7 @@ static db_result *init_result( PGresult *, db_prepared *,
  * command, creates a prepared statement, and returns a structure which can
  * be used to easily execute the prepared statement with arguments later.
  * This structure is dynamically allocated, and must be freed with
- * db_free_prepped when no longer needed (including if an error occurrs.)
+ * sqlf_free_prepped when no longer needed (including if an error occurrs.)
  *
  * This function accepts a command with printf-style placeholders, which is
  * converted into the appropriate format for PostgreSQL, and also makes note
@@ -66,18 +66,18 @@ static db_result *init_result( PGresult *, db_prepared *,
  * name: The name of the prepared statement to create
  * cmd: The command to prepare, with placeholders
  *
- * return: A new dynamically allocated db_prepared structure, or NULL if one
+ * return: A new dynamically allocated sqlf_prepared structure, or NULL if one
  * couldn't be allocated. If an error occurred, the `status` member will
  * contain the error:
- *  DB_BAD_CONN: Passed a null or invalid connection.
- *  DB_MALLOC_ERROR: Failed to malloc memory.
- *  DB_INVALID_PLACEHOLDER: The query had an invalid placeholder.
- *  DB_CONN_ERROR: PostgreSQL returned an error.
+ *  SQLF_BAD_CONN: Passed a null or invalid connection.
+ *  SQLF_MALLOC_ERROR: Failed to malloc memory.
+ *  SQLF_INVALID_PLACEHOLDER: The query had an invalid placeholder.
+ *  SQLF_CONN_ERROR: PostgreSQL returned an error.
  *
  */
-db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
+sqlf_prepared *sqlf_prep( PGconn *conn, char *name, char *cmd )
 {
-    db_prepared *prep = malloc( sizeof( db_prepared ));
+    sqlf_prepared *prep = malloc( sizeof( sqlf_prepared ));
     if( prep == NULL ) return NULL;
 
     prep->conn = NULL;
@@ -87,11 +87,11 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
     prep->oparams = 0;
     prep->types = NULL;
     prep->otypes = NULL;
-    prep->status = DB_OK;
+    prep->status = SQLF_OK;
 
     if( conn == NULL )
     {
-        prep->status = DB_BAD_CONN;
+        prep->status = SQLF_BAD_CONN;
         return prep;
     }
     prep->conn = conn;
@@ -99,7 +99,7 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
     prep->name = strdup( name );
     if( prep->name == NULL )
     {
-        prep->status = DB_MALLOC_ERROR;
+        prep->status = SQLF_MALLOC_ERROR;
         return prep;
     }
 
@@ -108,12 +108,12 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
 
     if( prep->nparams == DECODE_ERR_MALLOC )
     {
-        prep->status = DB_MALLOC_ERROR;
+        prep->status = SQLF_MALLOC_ERROR;
         return prep;
     }
     if( prep->nparams == DECODE_ERR_PLACEHOLDER )
     {
-        prep->status = DB_INVALID_PLACEHOLDER;
+        prep->status = SQLF_INVALID_PLACEHOLDER;
         return prep;
     }
 
@@ -121,29 +121,29 @@ db_prepared *db_prep( PGconn *conn, char *name, char *cmd )
             prep->query, prep->nparams, NULL );
     if( PQresultStatus( res ) != PGRES_COMMAND_OK )
     {
-        prep->status = DB_CONN_ERROR;
+        prep->status = SQLF_CONN_ERROR;
     }
     PQclear( res );
     return prep;
 }
 
 /*
- * Call a prepared statement returned by db_prep
+ * Call a prepared statement returned by sqlf_prep
  *
  * This function accepts the arguments described by the `cmd` argument to
- * db_prep(), and executes the command.
+ * sqlf_prep(), and executes the command.
  *
  * prep: The prepared statement object
  * ...: The input parameters, matching the format specified in the
  *      prepared statement.
  *
- * Return: The results, as a malloced db_result object
+ * Return: The results, as a malloced sqlf_result object
  */
-db_result *db_exec_prep( db_prepared *prep, ... )
+sqlf_result *sqlf_exec_prep( sqlf_prepared *prep, ... )
 {
     va_list vargs;
     va_start( vargs, prep );
-    db_result *out = db_vexec_prep( prep, vargs );
+    sqlf_result *out = sqlf_vexec_prep( prep, vargs );
     va_end( vargs );
     return out;
 }
@@ -152,17 +152,17 @@ db_result *db_exec_prep( db_prepared *prep, ... )
  * Execute a SQL statement directly, without a prepared statement
  *
  * conn: The SQL connection
- * cmd: The query to execute, possibly with placeholders (see db_prep)
+ * cmd: The query to execute, possibly with placeholders (see sqlf_prep)
  * ...: The variables, if appropriate
  *
- * Return: The result, as a db_result, or NULL on error.
+ * Return: The result, as a sqlf_result, or NULL on error.
  */
 
-db_result *db_exec( PGconn *conn, char *cmd, ... )
+sqlf_result *sqlf_exec( PGconn *conn, char *cmd, ... )
 {
     va_list vargs;
     va_start( vargs, cmd );
-    db_result *res = db_vexec( conn, cmd, vargs );
+    sqlf_result *res = sqlf_vexec( conn, cmd, vargs );
     va_end( vargs );
     return res;
 }
@@ -170,12 +170,12 @@ db_result *db_exec( PGconn *conn, char *cmd, ... )
 /*
  * Execute a query directly, and save the first row of results.
  *
- * This is effectively a db_exec() and db_fetch() rolled into one.
+ * This is effectively a sqlf_exec() and sqlf_fetch() rolled into one.
  *
  * This will execute a query, possibly with placeholders, pass the given
  * inputs into the query, and save any outputs to the supplied output
- * variables. Functionally this is more or less equialent to a db_prep
- * followed by a db_exec_prep.
+ * variables. Functionally this is more or less equialent to a sqlf_prep
+ * followed by a sqlf_exec_prep.
  *
  * Note that all input parameters must be specified first (in order),
  * followed by all output parameters (in order), regardless of whether
@@ -194,22 +194,22 @@ db_result *db_exec( PGconn *conn, char *cmd, ... )
  *
  */
 
-db_result *db_exec_inline( PGconn *conn, char *cmd, ... )
+sqlf_result *sqlf_exec_inline( PGconn *conn, char *cmd, ... )
 {
     va_list vargs;
     va_start( vargs, cmd );
-    db_result *res = db_vexec( conn, cmd, vargs );
-    if( res != NULL ) db_vfetch( res, vargs );
+    sqlf_result *res = sqlf_vexec( conn, cmd, vargs );
+    if( res != NULL ) sqlf_vfetch( res, vargs );
     va_end( vargs );
     return res;
 }
 
-db_result *db_exec_prep_inline( db_prepared *prep, ... )
+sqlf_result *sqlf_exec_prep_inline( sqlf_prepared *prep, ... )
 {
     va_list vargs;
     va_start( vargs, prep );
-    db_result *res = db_vexec_prep( prep, vargs );
-    if( res != NULL ) db_vfetch( res, vargs );
+    sqlf_result *res = sqlf_vexec_prep( prep, vargs );
+    if( res != NULL ) sqlf_vfetch( res, vargs );
     va_end( vargs );
     return res;
 }
@@ -224,11 +224,11 @@ db_result *db_exec_prep_inline( db_prepared *prep, ... )
  * Return: True if there were results to fetch, else false.
  */
 
-int db_fetch( db_result *res, ... )
+int sqlf_fetch( sqlf_result *res, ... )
 {
     va_list vargs;
     va_start( vargs, res );
-    int out = db_vfetch( res, vargs );
+    int out = sqlf_vfetch( res, vargs );
     va_end( vargs );
     return out;
 }
@@ -239,7 +239,7 @@ int db_fetch( db_result *res, ... )
  * This also clears the underlying SQL result object.
  */
 
-void db_free_result( db_result *r )
+void sqlf_free_result( sqlf_result *r )
 {
     if( r == NULL ) return;
     PQclear( r->res );
@@ -253,14 +253,14 @@ void db_free_result( db_result *r )
 }
 
 /* 
- * Free a prepared statement created by db_prep().
+ * Free a prepared statement created by sqlf_prep().
  *
  * This frees all mallocated memory, and is safe to use even if the structure
  * was only partially initialized due to an error. Note that it does *not*
  * remove the prepared statement on the server.
  */
 
-void db_free_prep( db_prepared *prep )
+void sqlf_free_prep( sqlf_prepared *prep )
 {
     if( prep == NULL ) return;
 
@@ -276,13 +276,13 @@ void db_free_prep( db_prepared *prep )
 /* ------------------------------------------------------------ */
 
 /*
- * db_exec(), but takes a va_list (The actual meat of db_exec)
+ * sqlf_exec(), but takes a va_list (The actual meat of sqlf_exec)
  */
-static db_result *db_vexec( PGconn *conn, char *cmd, va_list vargs )
+static sqlf_result *sqlf_vexec( PGconn *conn, char *cmd, va_list vargs )
 {
     if( conn == NULL ) return NULL;
-    enum db_param_types *types;
-    enum db_param_types *otypes;
+    enum sqlf_param_types *types;
+    enum sqlf_param_types *otypes;
     int oargs;
     char *query;
     int nparams = decode_args( cmd, &types, &otypes, &oargs, &query );
@@ -305,22 +305,22 @@ static db_result *db_vexec( PGconn *conn, char *cmd, va_list vargs )
             0 /* Results in text format. */ );
     free( args );
     if( res == NULL ) return NULL;
-    db_result *out = init_result( res, NULL, oargs, otypes );
+    sqlf_result *out = init_result( res, NULL, oargs, otypes );
     if( out != NULL ) return out;
     PQclear( res );
     return NULL;
 }
 
 /*
- * db_exec_prep() but takes a va_list
+ * sqlf_exec_prep() but takes a va_list
  */
-static db_result *db_vexec_prep( db_prepared *prep, va_list vargs )
+static sqlf_result *sqlf_vexec_prep( sqlf_prepared *prep, va_list vargs )
 {
     /* Array of arguments */
     char **args = convert_args( prep->nparams, prep->types, vargs );
     if( args == NULL )
     {
-        prep->status = DB_MALLOC_ERROR;
+        prep->status = SQLF_MALLOC_ERROR;
         return NULL;
     }
 
@@ -331,15 +331,15 @@ static db_result *db_vexec_prep( db_prepared *prep, va_list vargs )
             0 /* Results in text format. */ );
     free( args );
 
-    db_result *out = init_result( res, prep, 0, NULL );
+    sqlf_result *out = init_result( res, prep, 0, NULL );
     if( out == NULL ) PQclear( res );
     return out;
 }
 
 /*
- * db_fetch(), but takes a va_list
+ * sqlf_fetch(), but takes a va_list
  */
-static int db_vfetch( db_result *res, va_list vargs )
+static int sqlf_vfetch( sqlf_result *res, va_list vargs )
 {
     if( res->row >= res->nrows ) return 0;
 
@@ -349,7 +349,7 @@ static int db_vfetch( db_result *res, va_list vargs )
 }
 
 /*
- * Decode a format string for db_prep and friends
+ * Decode a format string for sqlf_prep and friends
  *
  * cmd: The query to decode, with printf-style placeholders
  * types_out: (A pointer to) An array of the types that were decoded. (NULL if
@@ -365,8 +365,8 @@ static int db_vfetch( db_result *res, va_list vargs )
  */
 
 static int decode_args( char *cmd,
-        enum db_param_types **types_out,
-        enum db_param_types **otypes_out,
+        enum sqlf_param_types **types_out,
+        enum sqlf_param_types **otypes_out,
         int *oargs_out,
         char **query_out )
 {
@@ -376,8 +376,8 @@ static int decode_args( char *cmd,
     /* Pointer into cmd */
     char *c;
     /* The types we found */
-    enum db_param_types *types = NULL;
-    enum db_param_types *otypes = NULL;
+    enum sqlf_param_types *types = NULL;
+    enum sqlf_param_types *otypes = NULL;
     /* The translated query */
     char *query = NULL;
     /* The error we return with */
@@ -444,7 +444,7 @@ static int decode_args( char *cmd,
     /* Is this an output argument? */
     int oarg = 0; 
     /* The type we just decoded */
-    enum db_param_types thistype;
+    enum sqlf_param_types thistype;
 
     /* This is the error we might encounter this stage */
     err = DECODE_ERR_PLACEHOLDER;
@@ -571,7 +571,7 @@ fail:
  *      frees the string data, as it is all allocated in a single chunk)
  */
 static char **convert_args(
-        int nparams, enum db_param_types *types, va_list vargs )
+        int nparams, enum sqlf_param_types *types, va_list vargs )
 {
     /* Array of arguments */
     char **args;
@@ -643,7 +643,7 @@ static char **convert_args(
  * Convert results from a query and copy them to variables.
  *
  * This takes a query result, refers to the output parameters specified in
- * the query (see db_prep), converts then, and saves them into the variables
+ * the query (see sqlf_prep), converts then, and saves them into the variables
  * specified.
  *
  * result: The SQL result object
@@ -655,7 +655,7 @@ static char **convert_args(
  * Return: Currently unused.
  */
 static int convert_results( PGresult *result, int nparams,
-        enum db_param_types *types, int row, ...)
+        enum sqlf_param_types *types, int row, ...)
 {
     va_list vargs ;
     va_start( vargs, row );
@@ -668,7 +668,7 @@ static int convert_results( PGresult *result, int nparams,
  */
 
 static int vconvert_results( PGresult *result, int nparams,
-        enum db_param_types *types, int row, va_list vargs )
+        enum sqlf_param_types *types, int row, va_list vargs )
 {
     for( int i = 0; i < nparams; i++ )
     {
@@ -705,20 +705,20 @@ static int vconvert_results( PGresult *result, int nparams,
 }
 
 /*
- * Initialize a db_result object
+ * Initialize a sqlf_result object
  *
  * res: The underlying SQL result object
  * prep: The prepared statement object, if applicable
  * oparams: The number of output parameters (taken from `prep` if supplied)
  * otypes: The type of output parameters (taken from `prep if supplied)
  *
- * Return: A malloced db_result
+ * Return: A malloced sqlf_result
  */
 
-static db_result *init_result( PGresult *res, db_prepared *prep,
-        int oparams, enum db_param_types *otypes )
+static sqlf_result *init_result( PGresult *res, sqlf_prepared *prep,
+        int oparams, enum sqlf_param_types *otypes )
 {
-    db_result *r = malloc( sizeof( db_result ));
+    sqlf_result *r = malloc( sizeof( sqlf_result ));
     if( r == NULL ) return NULL;
 
     r->res = res;
