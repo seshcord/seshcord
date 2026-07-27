@@ -10,7 +10,7 @@ override SRC := $(SRC) $(ROOT)/server/channel.c $(ROOT)/server/user.c $(ROOT)/se
 override OBJ := $(patsubst $(ROOT)/%.c,$(ROOT)/build/%.o,$(SRC))
 override OUT := $(ROOT)/bin/seshcord_server
 
-CFLAGS ?= -Wall -Wextra -Wformat=2 -Wno-variadic-macros -std=gnu89 -pedantic -fno-permissive -O2 -g
+CFLAGS ?= -Wall -Wextra -Wformat=2 -Wno-variadic-macros -std=gnu89 -pedantic -O2 -g
 override CFLAGS := $(CFLAGS) -I$(ROOT)/include -D_SESHCORD_SERVER -I/opt/homebrew/Cellar/libpq/18.4/include
 
 
