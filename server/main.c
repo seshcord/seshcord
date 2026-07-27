@@ -82,7 +82,7 @@ int main(void) {
 	user.id = get_user_id_from_username(conn, "seshcord");
 	if (user.id == (uint64_t)-1)
 		return 1;
-	printf("ID: %llu\r\n", user.id);
+	printf("ID: %lu\r\n", user.id);
 	get_user_by_id(conn, &user, user.id);
 	printf("Username: %s, Display Name: %s\r\n", user.username, user.display_name);
 	free_user(&user);

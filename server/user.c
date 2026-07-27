@@ -58,7 +58,7 @@ void delete_user(PGconn *conn, user_t user) {
 	PGresult *res;
 	char user_id_str[64];
 	const char *args[1];
-	sprintf(user_id_str, "%llu", user.id);
+	sprintf(user_id_str, "%lu", user.id);
 
 	if (conn == NULL) {
 		fprintf(stderr, "Connection pointer is NULL\n");
@@ -91,7 +91,7 @@ void update_user(PGconn *conn, user_t user) {
 	PGresult *res;
 	char user_id_str[64];
 	const char *args[7];
-	sprintf(user_id_str, "%llu", user.id);
+	sprintf(user_id_str, "%lu", user.id);
 
 	if (conn == NULL) {
 		fprintf(stderr, "Connection pointer is NULL\n");
@@ -133,7 +133,7 @@ void get_user_by_id(PGconn *conn, user_t *user, sc_id_t id) {
 	PGresult *res;
 	const char *args[1];
 	char user_id_str[64], *endptr, *user_val;
-	sprintf(user_id_str, "%llu", id);
+	sprintf(user_id_str, "%lu", id);
 
 	if (conn == NULL) {
 		fprintf(stderr, "Connection pointer is NULL\n");

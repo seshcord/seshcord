@@ -15,7 +15,7 @@ void create_channel(PGconn *conn, channel_t channel) {
 		return;
 	}
 
-	sprintf(server_id, "%llu", channel.server_id);
+	sprintf(server_id, "%lu", channel.server_id);
 
 	args[0] = server_id;
 	args[1] = channel.name;
@@ -82,7 +82,7 @@ void update_channel(PGconn *conn, channel_t channel) {
 		return;
 	}
 
-	sprintf(channel_id, "%llu", channel.id);
+	sprintf(channel_id, "%lu", channel.id);
 
 	args[0] = channel_id;
 	args[1] = channel.name;
@@ -119,7 +119,7 @@ void get_channel(PGconn *conn, channel_t channel) {
 		return;
 	}
 
-	sprintf(channel_id, "%llu", channel.id);
+	sprintf(channel_id, "%lu", channel.id);
 	args[0] = channel_id;
 
 	res = PQexecParams(conn,
@@ -151,7 +151,7 @@ void get_channels(PGconn *conn, server_t server) {
 		return;
 	}
 
-	sprintf(server_id, "%llu", server.id);
+	sprintf(server_id, "%lu", server.id);
 	args[0] = server_id;
 
 	res = PQexecParams(conn,
