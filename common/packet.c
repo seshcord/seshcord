@@ -86,7 +86,7 @@ again:
 }
 
 void seshcordEncodePacket(struct seshpkt **out, int id, const void *data) {
-	const struct seshcordCLHandshakeInit *clHandshakeInit;
+	/* const struct seshcordCLHandshakeInit *clHandshakeInit; */
 	void *outCur = malloc(sizeof(struct seshpkt));
 
 	*out = outCur;
