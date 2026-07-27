@@ -129,8 +129,8 @@ int main(void) {
 			curRecvBuf = (void *)&pkt;
 			remainingPktBytes = sizeof(struct seshpkt);
 			curState = RECV_STATE_CONTINUE_PKT;
-			/* fallthrough */
 		}
+                /* fallthrough */
 		case RECV_STATE_CONTINUE_PKT: {
 			ret = read(connfd, curRecvBuf, remainingPktBytes);
 			if (ret == -1 && errno == EAGAIN) {
@@ -159,8 +159,8 @@ int main(void) {
 			curRecvBuf = (void *)(((uintptr_t)buf) + sizeof(struct seshpkt));
 
 			curState = RECV_STATE_GET_DATA;
-			/* fallthrough */
 		}
+		/* fallthrough */
 		case RECV_STATE_GET_DATA: {
 			ret = read(connfd, curRecvBuf, remainingPktBytes);
 			if (ret == -1 && errno == EAGAIN)
