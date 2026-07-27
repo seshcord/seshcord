@@ -31,7 +31,7 @@ enum recvStates {
 int main(void) {
 	PGconn *conn;
 	char conninfo[128], *dbHost, *dbPort, *dbName, *dbUser, *dbPass;
-	user_t user;
+	/* user_t user; */
 	int sockfd, connfd, ret, remainingPktBytes;
 	struct sockaddr_in servaddr;
 	struct seshpkt pkt;

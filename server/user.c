@@ -180,7 +180,7 @@ void get_user_by_id(PGconn *conn, user_t *user, sc_id_t id) {
 
 sc_id_t get_user_id_from_username(PGconn *conn, const char *username) {
 	PGresult *res;
-	char user_id_str[64], *endptr, *user_val;
+	char /* user_id_str[64], */ *endptr, *user_val;
 	const char *args[1];
 
 	if (conn == NULL) {
